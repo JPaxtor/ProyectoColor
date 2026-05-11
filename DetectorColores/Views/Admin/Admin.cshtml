@@ -1,0 +1,115 @@
+@{
+    ViewData["Title"] = "Monitor de Colores";
+}
+<div class="container mt-4">
+    <div class="card shadow-sm border-0 mb-4">
+        <div class="card-body d-flex justify-content-around text-center" id="processStepper">
+            <div class="step" id="step-EJECUCION"><i class="bi bi-arrow-repeat fs-3"></i><br><small>GIRANDO</small></div>
+            <div class="step" id="step-DETECTANDO"><i class="bi bi-eyedropper fs-3"></i><br><small>MUESTREO</small></div>
+            <div class="step" id="step-ENCONTRADO"><i class="bi bi-bullseye fs-3"></i><br><small>ENCONTRADO</small></div>
+            <div class="step" id="step-UBICANDO"><i class="bi bi-pigeon-map fs-3"></i><br><small>UBICANDO</small></div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-8">
+            <div class="card shadow-sm border-0 p-3">
+                <h5 class="fw-bold">Análisis de Espectro (5 Muestras)</h5>
+                <canvas id="colorChart" style="height: 350px;"></canvas>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card shadow-sm border-0 p-3 mb-3">
+                <h6 class="text-muted fw-bold">CÁLCULO DE MODA</h6>
+                <div id="totalesList" class="list-group list-group-flush small">
+                    </div>
+                <div class="mt-3 p-2 bg-light text-center rounded">
+                    <span class="text-muted d-block small">Resultado Ganador</span>
+                    <h4 id="modaResult" class="mb-0 fw-bold">--</h4>
+                </div>
+            </div>
+            
+            <div id="finalColorCard" class="card shadow-sm border-0 p-4 text-center" style="transition: 0.5s;">
+                <h5 id="finalColorName">ESPERANDO...</h5>
+                <div id="previewCircle" class="mx-auto rounded-circle shadow-inner" style="width: 80px; height: 80px; background: #ddd; border: 4px solid white;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .step { opacity: 0.3; transition: 0.4s; transform: scale(0.9); }
+    .step.active { opacity: 1; color: #0d6efd; transform: scale(1.1); }
+    .shadow-inner { box-shadow: inset 0 2px 10px rgba(0,0,0,0.1); }
+</style>
+@section Scripts {
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/6.0.1/signalr.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <script>
+        var connection;
+        var colorChart;
+
+        $(document).ready(function () {
+            // Inicializar Gráfica con datos vacíos
+            const ctx = document.getElementById('colorChart').getContext('2d');
+            colorChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['M1', 'M2', 'M3', 'M4', 'M5'],
+                    datasets: [
+                        { label: 'Rojo', data: [0,0,0,0,0], backgroundColor: '#ff5f5f' },
+                        { label: 'Verde', data: [0,0,0,0,0], backgroundColor: '#5fff5f' },
+                        { label: 'Azul', data: [0,0,0,0,0], backgroundColor: '#5f5fff' },
+                        { label: 'Clear', data: [0,0,0,0,0], backgroundColor: '#eeeeee' }
+                    ]
+                },
+                options: {
+                    scales: { x: { stacked: true }, y: { stacked: true, max: 1024 } }
+                }
+            });
+
+            connection = new signalR.HubConnectionBuilder()
+                .withUrl("/adminHub")
+                .build();
+
+            connection.on("ReceiveProcessData", function (data) {
+                if (!data) return;
+
+                // Actualizar Stepper
+                $(".step").removeClass("active");
+                $(`#step-${data.estado}`).addClass("active");
+
+                // Actualizar Gráfica (validando que existan los arreglos)
+                if (data.r && data.g && data.b && data.c) {
+                    colorChart.data.datasets[0].data = data.r;
+                    colorChart.data.datasets[1].data = data.g;
+                    colorChart.data.datasets[2].data = data.b;
+                    colorChart.data.datasets[3].data = data.c;
+                    colorChart.update();
+                }
+
+                // Totales y Moda
+                $('#totalesList').empty();
+                if (data.totales) {
+                    data.totales.forEach((t, i) => {
+                        $('#totalesList').append(`<div class="list-group-item d-flex justify-content-between"><span>Muestra ${i+1}:</span> <strong>${t}</strong></div>`);
+                    });
+                }
+                $('#modaResult').text(data.modaResultado || "--");
+
+                if(data.estado === "ENCONTRADO") {
+                    const avgR = data.r.reduce((a,b) => a+b, 0)/5;
+                    const avgG = data.g.reduce((a,b) => a+b, 0)/5;
+                    const avgB = data.b.reduce((a,b) => a+b, 0)/5;
+                    const rgb = `rgb(${avgR}, ${avgG}, ${avgB})`;
+                    $('#previewCircle').css('background-color', rgb);
+                    $('#finalColorName').text(data.colorFinal).css('color', rgb);
+                }
+            });
+
+            connection.start().then(() => console.log("SignalR Conectado")).catch(console.error);
+        });
+    </script>
+}
